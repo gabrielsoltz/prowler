@@ -28,6 +28,7 @@ class S3:
         self.__threading_call__(self.__get_public_access_block__)
         self.__threading_call__(self.__get_bucket_encryption__)
         self.__threading_call__(self.__get_bucket_ownership_controls__)
+        self.__threading_call__(self.__get_object_lock_configuration__)
         self.__threading_call__(self.__get_bucket_tagging__)
 
     def __get_session__(self):
@@ -122,6 +123,15 @@ class S3:
             ][
                 "SSEAlgorithm"
             ]
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "NoSuchBucket":
+                logger.warning(
+                    f"{regional_client.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
+                )
+            else:
+                logger.error(
+                    f"{regional_client.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
+                )
         except Exception as error:
             if "ServerSideEncryptionConfigurationNotFoundError" in str(error):
                 bucket.encryption = None
@@ -167,6 +177,15 @@ class S3:
                 block_public_policy=public_access_block["BlockPublicPolicy"],
                 restrict_public_buckets=public_access_block["RestrictPublicBuckets"],
             )
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "NoSuchBucket":
+                logger.warning(
+                    f"{regional_client.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
+                )
+            else:
+                logger.error(
+                    f"{regional_client.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
+                )
         except Exception as error:
             if "NoSuchPublicAccessBlockConfiguration" in str(error):
                 # Set all block as False
@@ -241,9 +260,37 @@ class S3:
             bucket.ownership = regional_client.get_bucket_ownership_controls(
                 Bucket=bucket.name
             )["OwnershipControls"]["Rules"][0]["ObjectOwnership"]
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "NoSuchBucket":
+                logger.warning(
+                    f"{regional_client.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
+                )
+            else:
+                logger.error(
+                    f"{regional_client.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
+                )
         except Exception as error:
             if "OwnershipControlsNotFoundError" in str(error):
                 bucket.ownership = None
+            else:
+                if regional_client:
+                    logger.error(
+                        f"{regional_client.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
+                    )
+                else:
+                    logger.error(
+                        f"{error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
+                    )
+
+    def __get_object_lock_configuration__(self, bucket):
+        logger.info("S3 - Get buckets ownership controls...")
+        try:
+            regional_client = self.regional_clients[bucket.region]
+            regional_client.get_object_lock_configuration(Bucket=bucket.name)
+            bucket.object_lock = True
+        except Exception as error:
+            if "ObjectLockConfigurationNotFoundError" in str(error):
+                bucket.object_lock = False
             else:
                 if regional_client:
                     logger.error(
@@ -265,9 +312,14 @@ class S3:
         except ClientError as error:
             bucket.tags = []
             if error.response["Error"]["Code"] != "NoSuchTagSet":
-                logger.error(
-                    f"{regional_client.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
-                )
+                if error.response["Error"]["Code"] == "NoSuchBucket":
+                    logger.warning(
+                        f"{regional_client.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
+                    )
+                else:
+                    logger.error(
+                        f"{regional_client.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
+                    )
         except Exception as error:
             if regional_client:
                 logger.error(
@@ -349,5 +401,6 @@ class Bucket(BaseModel):
     region: str
     logging_target_bucket: Optional[str]
     ownership: Optional[str]
+    object_lock: bool = False
     mfa_delete: bool = False
     tags: Optional[list] = []
